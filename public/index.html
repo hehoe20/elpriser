@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clever Power Elpriser (DK1)</title>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 950px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        h1 { font-size: 1.5rem; color: #00A859; margin-top: 0; margin-bottom: 20px; }
+        
+        /* Samlet kontrolpanel */
+        .controls { 
+            display: flex; 
+            gap: 15px; 
+            margin-bottom: 20px; 
+            flex-wrap: wrap; 
+            align-items: center; 
+            justify-content: space-between; 
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+        
+        .date-navigator {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            width: auto;
+        }
+
+        .date-buttons-row {
+            display: flex;
+            gap: 8px;
+            width: 100%;
+        }
+
+        button { background: #00A859; color: white; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.9rem; transition: background 0.2s; white-space: nowrap; }
+        button:hover { background: #008f4c; }
+        button.secondary { background: #e2e8f0; color: #334155; }
+        button.secondary:hover { background: #cbd5e1; }
+        
+        #currentDateLabel {
+            font-weight: 700;
+            font-size: 1rem;
+            color: #1e293b;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .toggle-container { 
+            display: flex; 
+            align-items: center; 
+            gap: 10px; 
+            font-weight: 500; 
+            font-size: 0.9rem; 
+            color: #475569; 
+        }
+
+        .chart-wrapper { 
+            position: relative; 
+            height: 380px; 
+            width: 100%; 
+            margin-bottom: 10px; 
+        }
+
+        #priceSummary {
+            margin-top: 15px; 
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 15px; 
+            font-size: 0.95rem;
+        }
+
+        /* Responsivt design til mobil */
+        @media (max-width: 768px) {
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 15px;
+            }
+            .date-navigator {
+                width: 100%;
+            }
+            .date-buttons-row {
+                display: flex;
+                width: 100%;
+            }
+            button.secondary {
+                flex: 1; /* Gør forrige/næste-knapper ligeligt fordelt i fuld bredde */
+                text-align: center;
+                padding: 10px;
+            }
+            .toggle-container {
+                justify-content: space-between;
+                border-top: 1px solid #e2e8f0;
+                padding-top: 12px;
+                width: 100%;
+            }
+            #priceSummary {
+                grid-template-columns: 1fr; 
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Clever Power & Vores Elnet Priser (DK1)</h1>
+
+    <!-- Advarselsbanner / Popup til tarif- og afgiftsændringer -->
+    <div id="tariffWarning" style="display: none; background: #fff3cd; color: #856404; padding: 12px 15px; border-radius: 6px; border: 1px solid #ffeeba; margin-bottom: 15px; font-size: 0.9rem; align-items: center; justify-content: space-between;">
+        <span id="warningText">⚠️ <strong>Bemærk:</strong> Tariffer eller afgifter forventes at ændre sig i næste uge. Tjek om beregningen skal opdateres!</span>
+        <button onclick="document.getElementById('tariffWarning').style.display='none'" style="background: transparent; border: none; color: #856404; font-weight: bold; cursor: pointer; font-size: 1rem;">&times;</button>
+    </div>
+       
+    <div class="controls">
+        <div class="date-navigator">
+            <span id="currentDateLabel">Dato</span>
+            <div class="date-buttons-row">
+                <button id="btnPrev" class="secondary">← Forrige</button>
+                <button id="btnNext" class="secondary">Næste →</button>
+            </div>
+        </div>
+        
+        <div class="toggle-container">
+            <label for="taxToggle">Vis med afgifter & tariffer:</label>
+            <input type="checkbox" id="taxToggle" checked style="transform: scale(1.2); cursor: pointer;">
+        </div>
+    </div>
+
+    <div class="chart-wrapper">
+        <canvas id="priceChart"></canvas>
+    </div>
+
+    <!-- Tekst-boks til billigste og dyreste tidsrum -->
+    <div id="priceSummary">
+        <div id="cheapestBox" style="background: #e8f5e9; padding: 15px; border-radius: 8px; border-left: 5px solid #00A859;">
+            <strong style="color: #008f4c; display: block; margin-bottom: 8px;">🌱 Billigste sammenhængende timer (inkl. afgifter):</strong>
+            <div id="cheapestText">Henter...</div>
+        </div>
+        <div id="expensiveBox" style="background: #ffebee; padding: 15px; border-radius: 8px; border-left: 5px solid #d32f2f;">
+            <strong style="color: #c62828; display: block; margin-bottom: 8px;">⚡ Dyreste sammenhængende timer (inkl. afgifter):</strong>
+            <div id="expensiveText">Henter...</div>
+        </div>
+    </div>
+    
+</div>
+
+<script>
+    let currentDate = new Date();
+    let chartInstance = null;
+
+    const dateLabel = document.getElementById('currentDateLabel');
+    const taxToggle = document.getElementById('taxToggle');
+    const btnPrev = document.getElementById('btnPrev');
+    const btnNext = document.getElementById('btnNext');
+
+    function formatDate(date) {
+        return date.toISOString().split('T')[0];
+    }
+
+    async function loadPrices() {
+        const dateStr = formatDate(currentDate);
+        dateLabel.textContent = dateStr;
+        checkForTariffChanges(currentDate);
+
+        try {
+            const response = await fetch(`/api/prices/${dateStr}`);
+            if (!response.ok) {
+                alert('Kunne ikke hente priser for denne dato endnu.');
+                return;
+            }
+            const data = await response.json();
+            renderChart(data);
+            calculateBestAndWorstSlots(data.hours, data.pricesMed);
+        } catch (err) {
+            console.error(err);
+            alert('Fejl ved hentning af data.');
+        }
+    }
+
+    function checkForTariffChanges(dateObj) {
+        const warningBox = document.getElementById('tariffWarning');
+        const warningText = document.getElementById('warningText');
+        
+        const month = dateObj.getMonth(); 
+        const day = dateObj.getDate();
+        const transitionMonths = [0, 3, 6, 9]; // Januar, April, Juli, Oktober
+        
+        let showWarning = false;
+        let message = "";
+
+        for (let m of transitionMonths) {
+            let targetMonth = (m === 0) ? 11 : m - 1; 
+            if (day >= 24 && month === targetMonth) {
+                showWarning = true;
+                message = `⚠️ <strong>Tarif- og afgiftsvarsel:</strong> Nyt kvartal starter den 1. ${getMonthsName((m+1)%12)}. Husk at tjekke om Vores Elnet eller Energinet har opdateret deres tariffer!`;
+                break;
+            }
+        }
+
+        if (showWarning) {
+            warningText.innerHTML = message;
+            warningBox.style.display = 'flex';
+        } else {
+            warningBox.style.display = 'none';
+        }
+    }
+
+    function getMonthsName(mIndex) {
+        const months = ["januar", "februar", "marts", "april", "maj", "juni", "juli", "august", "september", "oktober", "november", "december"];
+        return months[mIndex];
+    }
+
+    function calculateBestAndWorstSlots(hours, pricesMed) {
+        function findBestWindow(arr, k, findLowest) {
+            let bestSum = Infinity;
+            if (!findLowest) bestSum = -Infinity;
+            let bestIndex = 0;
+
+            for (let i = 0; i <= arr.length - k; i++) {
+                let currentSum = 0;
+                for (let j = 0; j < k; j++) {
+                    currentSum += arr[i + j];
+                }
+                if (findLowest ? currentSum < bestSum : currentSum > bestSum) {
+                    bestSum = currentSum;
+                    bestIndex = i;
+                }
+            }
+
+            let avg = bestSum / k;
+            let startTime = hours[bestIndex];
+            let endHourNum = (parseInt(hours[bestIndex].split(':')[0]) + k) % 24;
+            let endTime = String(endHourNum).padStart(2, '0') + ':00';
+            
+            return {
+                text: `${startTime} – ${endTime} (snit: ${avg.toFixed(2)} kr./kWh)`,
+                avg: avg
+            };
+        }
+
+        if (!pricesMed || pricesMed.length < 5) return;
+
+        const cheap3 = findBestWindow(pricesMed, 3, true);
+        const cheap4 = findBestWindow(pricesMed, 4, true);
+        const cheap5 = findBestWindow(pricesMed, 5, true);
+
+        const exp3 = findBestWindow(pricesMed, 3, false);
+        const exp4 = findBestWindow(pricesMed, 4, false);
+        const exp5 = findBestWindow(pricesMed, 5, false);
+
+        document.getElementById('cheapestText').innerHTML = `
+            • 3 timer: <b>${cheap3.text}</b><br>
+            • 4 timer: <b>${cheap4.text}</b><br>
+            • 5 timer: <b>${cheap5.text}</b>
+        `;
+
+        document.getElementById('expensiveText').innerHTML = `
+            • 3 timer: <b>${exp3.text}</b><br>
+            • 4 timer: <b>${exp4.text}</b><br>
+            • 5 timer: <b>${exp5.text}</b>
+        `;
+    }
+
+    function renderChart(data) {
+        const showTax = taxToggle.checked;
+        const ctx = document.getElementById('priceChart').getContext('2d');
+        
+        if (chartInstance) {
+            chartInstance.destroy();
+        }
+
+        let datasets = [];
+
+        if (!showTax) {
+            datasets = [{
+                label: 'Rå elpris inkl. moms (kr./kWh)',
+                data: data.pricesUden,
+                backgroundColor: 'rgba(0, 168, 89, 0.7)',
+                borderColor: '#008f4c',
+                borderWidth: 1
+            }];
+        } else {
+            const spotData = data.pricesUden;
+            const afgiftData = data.pricesMed.map((med, i) => Number((med - spotData[i]).toFixed(2)));
+
+            datasets = [
+                {
+                    label: 'Rå elpris inkl. moms',
+                    data: spotData,
+                    backgroundColor: 'rgba(0, 168, 89, 0.7)',
+                    borderColor: '#008f4c',
+                    borderWidth: 1
+                },
+                {
+                    label: 'Tariffer, net & afgifter',
+                    data: afgiftData,
+                    backgroundColor: 'rgba(108, 117, 125, 0.7)',
+                    borderColor: '#495057',
+                    borderWidth: 1
+                }
+            ];
+        }
+
+        chartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: data.hours,
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        stacked: true,
+                        grid: { display: false }
+                    },
+                    y: {
+                        stacked: true,
+                        beginAtZero: true,
+                        title: { display: true, text: 'DKK / kWh' }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            title: function(tooltipItems) {
+                                return 'Kl. ' + tooltipItems[0].label;
+                            },
+                            label: function(context) {
+                                let val = context.parsed.y.toFixed(2);
+                                if (!showTax) {
+                                    return 'Rå elpris inkl. moms: ' + val + ' kr./kWh';
+                                } else {
+                                    if (context.datasetIndex === 0) {
+                                        return 'Rå elpris inkl. moms: ' + val + ' kr./kWh';
+                                    } else {
+                                        return 'Tariffer, net & afgifter: ' + val + ' kr./kWh';
+                                    }
+                                }
+                            },
+                            afterBody: function(tooltipItems) {
+                                if (!showTax) return '';
+                                let total = tooltipItems.reduce((sum, item) => sum + item.parsed.y, 0);
+                                return '--------------------------\nSamlet pris: ' + total.toFixed(2) + ' kr./kWh';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    btnPrev.addEventListener('click', () => {
+        currentDate.setDate(currentDate.getDate() - 1);
+        loadPrices();
+    });
+
+    btnNext.addEventListener('click', () => {
+        currentDate.setDate(currentDate.getDate() + 1);
+        loadPrices();
+    });
+
+    taxToggle.addEventListener('change', () => {
+        loadPrices();
+    });
+
+    loadPrices();
+</script>
+
+</body>
+</html>

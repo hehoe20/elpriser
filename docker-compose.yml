@@ -1,0 +1,9 @@
+services:
+  app:
+    build: .
+    container_name: clever-nordpool
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000

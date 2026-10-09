@@ -1,0 +1,16 @@
+{
+  "name": "clever-nordpool-app",
+  "version": "1.0.0",
+  "description": "Node.js app to fetch Nordpool DK1 electricity prices with Clever Power fees and taxes",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
